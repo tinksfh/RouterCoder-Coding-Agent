@@ -1,0 +1,28 @@
+{
+  "name": "routercoder-coding-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "routercoder": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "clean": "node scripts/clean-dist.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts",
+    "dev": "tsx src/cli.ts"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.13",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

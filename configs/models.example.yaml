@@ -1,0 +1,28 @@
+# 2026-09-23 OpenAI API 标准价格快照，单位：美元 / 百万 Token。
+# 通过 Pi 的 openai-codex 登录时，这些价格仅用于模拟 API 等价费用，
+# 并非 ChatGPT 订阅的实际扣费。contextWindow 取当前 Pi 模型目录的限制。
+models:
+  small:
+    provider: openai-codex
+    model: gpt-5.6-luna
+    contextWindow: 272000
+    inputPricePerMillion: 0.2
+    cacheReadPricePerMillion: 0.02
+    cacheWritePricePerMillion: 0.25
+    outputPricePerMillion: 1.2
+  medium:
+    provider: openai-codex
+    model: gpt-6-luna
+    contextWindow: 272000
+    inputPricePerMillion: 0.1
+    cacheReadPricePerMillion: 0.01
+    cacheWritePricePerMillion: 0.125
+    outputPricePerMillion: 0.5
+  strong:
+    provider: openai-codex
+    model: gpt-6-sol
+    contextWindow: 272000
+    inputPricePerMillion: 2
+    cacheReadPricePerMillion: 0.2
+    cacheWritePricePerMillion: 2.5
+    outputPricePerMillion: 10

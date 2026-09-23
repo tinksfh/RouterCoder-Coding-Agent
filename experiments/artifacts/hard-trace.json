@@ -1,0 +1,77 @@
+{
+  "id": "dddef93c-d48c-49da-9458-bf0e88b1ebec",
+  "startedAt": "2026-09-23T10:18:49.886Z",
+  "endedAt": "2026-09-23T10:21:25.174Z",
+  "durationMs": 155288,
+  "status": "success",
+  "task": "Consider MRO when obtaining marks for classes\nWhen using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.\r\n\r\nIf it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.\r\n\r\n```python\r\nimport itertools\r\nimport pytest\r\n\r\nclass BaseMeta(type):\r\n    @property\r\n    def pytestmark(self):\r\n        return (\r\n            getattr(self, \"_pytestmark\", []) +\r\n            list(itertools.chain.from_iterable(getattr(x, \"_pytestmark\", []) for x in self.__mro__))\r\n        )\r\n\r\n    @pytestmark.setter\r\n    def pytestmark(self, value):\r\n        self._pytestmark = value\r\n\r\n\r\nclass Base(object):\r\n    # Without this metaclass, foo and bar markers override each other, and test_dings\r\n    # will only have one marker\r\n    # With the metaclass, test_dings will have both\r\n    __metaclass__ = BaseMeta\r\n\r\n@pytest.mark.foo\r\nclass Foo(Base):\r\n    pass\r\n\r\n\r\n@pytest.mark.bar\r\nclass Bar(Base):\r\n    pass\r\n\r\nclass TestDings(Foo, Bar):\r\n    def test_dings(self):\r\n        # This test should have both markers, foo and bar.\r\n        # In practice markers are resolved using MRO (so foo wins), unless the\r\n        # metaclass is applied\r\n        pass\r\n```\r\n\r\nI'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.\r\n\r\nPlease note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)\nConsider MRO when obtaining marks for classes\nWhen using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.\r\n\r\nIf it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.\r\n\r\n```python\r\nimport itertools\r\nimport pytest\r\n\r\nclass BaseMeta(type):\r\n    @property\r\n    def pytestmark(self):\r\n        return (\r\n            getattr(self, \"_pytestmark\", []) +\r\n            list(itertools.chain.from_iterable(getattr(x, \"_pytestmark\", []) for x in self.__mro__))\r\n        )\r\n\r\n    @pytestmark.setter\r\n    def pytestmark(self, value):\r\n        self._pytestmark = value\r\n\r\n\r\nclass Base(object):\r\n    # Without this metaclass, foo and bar markers override each other, and test_dings\r\n    # will only have one marker\r\n    # With the metaclass, test_dings will have both\r\n    __metaclass__ = BaseMeta\r\n\r\n@pytest.mark.foo\r\nclass Foo(Base):\r\n    pass\r\n\r\n\r\n@pytest.mark.bar\r\nclass Bar(Base):\r\n    pass\r\n\r\nclass TestDings(Foo, Bar):\r\n    def test_dings(self):\r\n        # This test should have both markers, foo and bar.\r\n        # In practice markers are resolved using MRO (so foo wins), unless the\r\n        # metaclass is applied\r\n        pass\r\n```\r\n\r\nI'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.\r\n\r\nPlease note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)\nFix missing marks when inheritance from multiple classes\n\r\n<!--\r\nThanks for submitting a PR, your contribution is really appreciated!\r\n\r\nHere is a quick checklist that should be present in PRs.\r\n\r\n- [] Include documentation when adding new features.\r\n- [ ] Include new tests or update existing tests when applicable.\r\n- [X] Allow maintainers to push and squash when merging my commits. Please uncheck this if you prefer to squash the commits yourself.\r\n\r\nIf this change fixes an issue, please:\r\n\r\n- [x] Add text like ``closes #XYZW`` to the PR description and/or commits (where ``XYZW`` is the issue number). See the [github docs](https://help.github.com/en/github/managing-your-work-on-github/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword) for more information.\r\n\r\nUnless your change is trivial or a small documentation fix (e.g., a typo or reword of a small section) please:\r\n\r\n- [x] Create a new changelog file in the `changelog` folder, with a name like `<ISSUE NUMBER>.<TYPE>.rst`. See [changelog/README.rst](https://github.com/pytest-dev/pytest/blob/main/changelog/README.rst) for details.\r\n\r\n  Write sentences in the **past or present tense**, examples:\r\n\r\n  * *Improved verbose diff output with sequences.*\r\n  * *Terminal summary statistics now use multiple colors.*\r\n\r\n  Also make sure to end the sentence with a `.`.\r\n\r\n- [x] Add yourself to `AUTHORS` in alphabetical order.\r\n-->\r\n\n",
+  "repoPath": "/tmp/routercoder-swebench-verified-experiment/hard",
+  "commit": "3c1534944cbd34e8a41bc9e76818018fadefc9a1",
+  "router": "jev",
+  "decision": {
+    "router": "jev",
+    "tier": "strong",
+    "difficulty": "medium",
+    "confidence": 0.59,
+    "probabilities": {
+      "hard": 0.27,
+      "medium": 0.72,
+      "easy": 0.01
+    },
+    "reason": "Jev confidence below 0.60; selected strong",
+    "fallback": true,
+    "jevModel": "jev-1.13.0",
+    "jevUsage": {
+      "inputTokens": 1731,
+      "outputTokens": 38
+    }
+  },
+  "selectedModel": {
+    "tier": "strong",
+    "provider": "openai-codex",
+    "model": "gpt-6-sol"
+  },
+  "priceSnapshot": {
+    "provider": "openai-codex",
+    "model": "gpt-6-sol",
+    "contextWindow": 272000,
+    "inputPricePerMillion": 2,
+    "outputPricePerMillion": 10,
+    "cacheReadPricePerMillion": 0.2,
+    "cacheWritePricePerMillion": 2.5
+  },
+  "costEstimateBasis": "OpenAI API 标准价格模拟；使用 ChatGPT 登录时不代表实际订阅扣费",
+  "agent": {
+    "success": true,
+    "summary": "Fixed class mark collection so test classes inheriting from multiple marked bases receive marks from every base. Mark storage now keeps each class’s own marks separate, preventing inherited marks from being duplicated. Added regression tests and documentation.\n\n`testing/test_mark.py`: 90 passed, 1 xfailed.",
+    "metrics": {
+      "modelsUsed": [
+        "openai-codex/gpt-6-sol"
+      ],
+      "inputTokens": 27435,
+      "outputTokens": 3683,
+      "cacheReadTokens": 202880,
+      "cacheWriteTokens": 0,
+      "toolCalls": [
+        {
+          "name": "bash",
+          "count": 13,
+          "errors": 2
+        },
+        {
+          "name": "read",
+          "count": 8,
+          "errors": 0
+        },
+        {
+          "name": "edit",
+          "count": 5,
+          "errors": 0
+        }
+      ],
+      "estimatedCostUsd": 0.132276
+    }
+  },
+  "diff": "diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst\nindex 34d96c2bc..a026e8eab 100644\n--- a/doc/en/example/markers.rst\n+++ b/doc/en/example/markers.rst\n@@ -311,6 +311,10 @@ Due to legacy reasons, before class decorators were introduced, it is possible t\n     class TestClass:\n         pytestmark = pytest.mark.webtest\n \n+Marks on base classes are inherited by test classes, including when a test class\n+inherits from multiple marked bases. Repeated marks are retained, so marks with\n+the same name but different arguments can coexist.\n+\n .. _`marking individual tests when using parametrize`:\n \n Marking individual tests when using parametrize\ndiff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py\nindex 800a25c92..3a6019d2b 100644\n--- a/src/_pytest/mark/structures.py\n+++ b/src/_pytest/mark/structures.py\n@@ -355,12 +355,23 @@ class MarkDecorator:\n         return self.with_args(*args, **kwargs)\n \n \n-def get_unpacked_marks(obj: object) -> Iterable[Mark]:\n-    \"\"\"Obtain the unpacked marks that are stored on an object.\"\"\"\n+def get_unpacked_marks(obj: object, *, consider_mro: bool = True) -> Iterable[Mark]:\n+    \"\"\"Obtain the unpacked marks that are stored on an object.\n+\n+    If the object is a class, include marks from its bases in reverse MRO order.\n+    \"\"\"\n+    if inspect.isclass(obj):\n+        for cls in reversed(obj.__mro__) if consider_mro else (obj,):\n+            mark_list = cls.__dict__.get(\"pytestmark\", [])\n+            if not isinstance(mark_list, list):\n+                mark_list = [mark_list]\n+            yield from normalize_mark_list(mark_list)\n+        return\n+\n     mark_list = getattr(obj, \"pytestmark\", [])\n     if not isinstance(mark_list, list):\n         mark_list = [mark_list]\n-    return normalize_mark_list(mark_list)\n+    yield from normalize_mark_list(mark_list)\n \n \n def normalize_mark_list(\n@@ -388,7 +399,7 @@ def store_mark(obj, mark: Mark) -> None:\n     assert isinstance(mark, Mark), mark\n     # Always reassign name to avoid updating pytestmark in a reference that\n     # was only borrowed.\n-    obj.pytestmark = [*get_unpacked_marks(obj), mark]\n+    obj.pytestmark = [*get_unpacked_marks(obj, consider_mro=False), mark]\n \n \n # Typing for builtin pytest marks. This is cheating; it gives builtin marks\ndiff --git a/testing/test_mark.py b/testing/test_mark.py\nindex 65f2581bd..67e3a4414 100644\n--- a/testing/test_mark.py\n+++ b/testing/test_mark.py\n@@ -561,6 +561,51 @@ class TestFunctional:\n         items, rec = pytester.inline_genitems(p)\n         self.assert_markers(items, test_foo=(\"a\", \"b\", \"c\"), test_bar=(\"a\", \"b\", \"d\"))\n \n+    def test_mark_multiple_inheritance(self, pytester: Pytester) -> None:\n+        p = pytester.makepyfile(\n+            \"\"\"\n+            import pytest\n+\n+            @pytest.mark.shared(source=\"base\")\n+            class Base: pass\n+\n+            @pytest.mark.foo\n+            class Foo(Base): pass\n+\n+            @pytest.mark.bar\n+            class Bar(Base): pass\n+\n+            @pytest.mark.shared(source=\"child\")\n+            class TestDings(Foo, Bar):\n+                def test_dings(self): pass\n+            \"\"\"\n+        )\n+        items, _ = pytester.inline_genitems(p)\n+        assert len(items) == 1\n+        marks = list(items[0].iter_markers())\n+        assert [mark.name for mark in marks] == [\"shared\", \"bar\", \"foo\", \"shared\"]\n+        assert [mark.kwargs[\"source\"] for mark in marks if mark.name == \"shared\"] == [\n+            \"base\", \"child\"\n+        ]\n+\n+    def test_mark_multiple_inheritance_without_child_mark(self, pytester: Pytester) -> None:\n+        p = pytester.makepyfile(\n+            \"\"\"\n+            import pytest\n+\n+            @pytest.mark.foo\n+            class Foo: pass\n+\n+            @pytest.mark.bar\n+            class Bar: pass\n+\n+            class TestDings(Foo, Bar):\n+                def test_dings(self): pass\n+            \"\"\"\n+        )\n+        items, _ = pytester.inline_genitems(p)\n+        assert [mark.name for mark in items[0].iter_markers()] == [\"bar\", \"foo\"]\n+\n     def test_mark_closest(self, pytester: Pytester) -> None:\n         p = pytester.makepyfile(\n             \"\"\"\n",
+  "error": null
+}

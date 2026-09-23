@@ -1,0 +1,78 @@
+export const TIERS = ["small", "medium", "strong"] as const;
+export type Tier = (typeof TIERS)[number];
+export type Difficulty = "easy" | "medium" | "hard";
+export type RouterKind = "jev" | "rule" | "fixed";
+
+export interface ModelConfig {
+  provider: string;
+  model: string;
+  contextWindow: number;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  cacheReadPricePerMillion?: number;
+  cacheWritePricePerMillion?: number;
+}
+
+export interface ModelsConfig {
+  models: Record<Tier, ModelConfig>;
+}
+
+export interface TaskContext {
+  task: string;
+  repoPath: string;
+  commit: string;
+  trackedFiles: number;
+  languages: string[];
+}
+
+export interface Decision {
+  router: RouterKind;
+  tier: Tier;
+  difficulty: Difficulty | null;
+  confidence: number | null;
+  probabilities: Record<Difficulty, number> | null;
+  reason: string;
+  fallback: boolean;
+  jevModel?: string;
+  jevUsage?: { inputTokens: number; outputTokens: number };
+}
+
+export interface DecisionEngine {
+  decide(context: TaskContext): Promise<Decision>;
+}
+
+export interface AgentMetrics {
+  modelsUsed: string[];
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  toolCalls: { name: string; count: number; errors: number }[];
+  estimatedCostUsd: number;
+}
+
+export interface AgentResult {
+  success: boolean;
+  summary: string;
+  error?: string;
+  metrics: AgentMetrics;
+}
+
+export interface RunTrace {
+  id: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  status: "success" | "failed";
+  task: string;
+  repoPath: string;
+  commit: string | null;
+  router: RouterKind;
+  decision: Decision | null;
+  selectedModel: { tier: Tier; provider: string; model: string } | null;
+  priceSnapshot: ModelConfig | null;
+  costEstimateBasis: string | null;
+  agent: AgentResult | null;
+  diff: string;
+  error: string | null;
+}

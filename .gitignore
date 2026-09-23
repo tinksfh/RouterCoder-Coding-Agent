@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+configs/models.yaml
+traces/*
+!traces/README.md
+.routercoder/
+.idea/
+*.tsbuildinfo

@@ -1,0 +1,192 @@
+2026-09-23 20:48:17,992 - INFO - Image not found locally, attempting to pull...
+2026-09-23 20:49:33,628 - INFO - Creating container for pytest-dev__pytest-10356...
+2026-09-23 20:49:34,326 - INFO - Container for pytest-dev__pytest-10356 created: 6c13ec8ba491d24208228614a015e8699b3bcfcd16d56513c30149c40e88c2a8
+2026-09-23 20:49:34,611 - INFO - Container for pytest-dev__pytest-10356 started: 6c13ec8ba491d24208228614a015e8699b3bcfcd16d56513c30149c40e88c2a8
+2026-09-23 20:49:34,612 - INFO - Intermediate patch for pytest-dev__pytest-10356 written to logs/run_evaluation/routercoder-hard-20260923-2/routercoder-jev-gpt-6-sol/pytest-dev__pytest-10356/patch.diff, now applying to container...
+2026-09-23 20:49:34,732 - INFO - >>>>> Applied Patch:
+Checking patch doc/en/example/markers.rst...
+Checking patch src/_pytest/mark/structures.py...
+Checking patch testing/test_mark.py...
+Applied patch doc/en/example/markers.rst cleanly.
+Applied patch src/_pytest/mark/structures.py cleanly.
+Applied patch testing/test_mark.py cleanly.
+
+2026-09-23 20:49:34,852 - INFO - Git diff before:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..a026e8eab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -311,6 +311,10 @@ Due to legacy reasons, before class decorators were introduced, it is possible t
+     class TestClass:
+         pytestmark = pytest.mark.webtest
+ 
++Marks on base classes are inherited by test classes, including when a test class
++inherits from multiple marked bases. Repeated marks are retained, so marks with
++the same name but different arguments can coexist.
++
+ .. _`marking individual tests when using parametrize`:
+ 
+ Marking individual tests when using parametrize
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..3a6019d2b 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -355,12 +355,23 @@ class MarkDecorator:
+         return self.with_args(*args, **kwargs)
+ 
+ 
+-def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
++def get_unpacked_marks(obj: object, *, consider_mro: bool = True) -> Iterable[Mark]:
++    """Obtain the unpacked marks that are stored on an object.
++
++    If the object is a class, include marks from its bases in reverse MRO order.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__) if consider_mro else (obj,):
++            mark_list = cls.__dict__.get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            yield from normalize_mark_list(mark_list)
++        return
++
+     mark_list = getattr(obj, "pytestmark", [])
+     if not isinstance(mark_list, list):
+         mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    yield from normalize_mark_list(mark_list)
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +399,7 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    obj.pytestmark = [*get_unpacked_marks(obj, consider_mro=False), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+diff --git a/testing/test_mark.py b/testing/test_mark.py
+index 65f2581bd..67e3a4414 100644
+--- a/testing/test_mark.py
++++ b/testing/test_mark.py
+@@ -561,6 +561,51 @@ class TestFunctional:
+         items, rec = pytester.inline_genitems(p)
+         self.assert_markers(items, test_foo=("a", "b", "c"), test_bar=("a", "b", "d"))
+ 
++    def test_mark_multiple_inheritance(self, pytester: Pytester) -> None:
++        p = pytester.makepyfile(
++            """
++            import pytest
++
++            @pytest.mark.shared(source="base")
++            class Base: pass
++
++            @pytest.mark.foo
++            class Foo(Base): pass
++
++            @pytest.mark.bar
++            class Bar(Base): pass
++
++            @pytest.mark.shared(source="child")
++            class TestDings(Foo, Bar):
++                def test_dings(self): pass
++            """
++        )
++        items, _ = pytester.inline_genitems(p)
++        assert len(items) == 1
++        marks = list(items[0].iter_markers())
++        assert [mark.name for mark in marks] == ["shared", "bar", "foo", "shared"]
++        assert [mark.kwargs["source"] for mark in marks if mark.name == "shared"] == [
++            "base", "child"
++        ]
++
++    def test_mark_multiple_inheritance_without_child_mark(self, pytester: Pytester) -> None:
++        p = pytester.makepyfile(
++            """
++            import pytest
++
++            @pytest.mark.foo
++            class Foo: pass
++
++            @pytest.mark.bar
++            class Bar: pass
++
++            class TestDings(Foo, Bar):
++                def test_dings(self): pass
++            """
++        )
++        items, _ = pytester.inline_genitems(p)
++        assert [mark.name for mark in items[0].iter_markers()] == ["bar", "foo"]
++
+     def test_mark_closest(self, pytester: Pytester) -> None:
+         p = pytester.makepyfile(
+             """
+2026-09-23 20:49:34,852 - INFO - Eval script for pytest-dev__pytest-10356 written to logs/run_evaluation/routercoder-hard-20260923-2/routercoder-jev-gpt-6-sol/pytest-dev__pytest-10356/eval.sh; copying to container...
+2026-09-23 20:49:45,235 - INFO - Test runtime: 10.32 seconds
+2026-09-23 20:49:45,236 - INFO - Test output for pytest-dev__pytest-10356 written to logs/run_evaluation/routercoder-hard-20260923-2/routercoder-jev-gpt-6-sol/pytest-dev__pytest-10356/test_output.txt
+2026-09-23 20:49:45,289 - INFO - Git diff after:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..a026e8eab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -311,6 +311,10 @@ Due to legacy reasons, before class decorators were introduced, it is possible t
+     class TestClass:
+         pytestmark = pytest.mark.webtest
+ 
++Marks on base classes are inherited by test classes, including when a test class
++inherits from multiple marked bases. Repeated marks are retained, so marks with
++the same name but different arguments can coexist.
++
+ .. _`marking individual tests when using parametrize`:
+ 
+ Marking individual tests when using parametrize
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..3a6019d2b 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -355,12 +355,23 @@ class MarkDecorator:
+         return self.with_args(*args, **kwargs)
+ 
+ 
+-def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
++def get_unpacked_marks(obj: object, *, consider_mro: bool = True) -> Iterable[Mark]:
++    """Obtain the unpacked marks that are stored on an object.
++
++    If the object is a class, include marks from its bases in reverse MRO order.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__) if consider_mro else (obj,):
++            mark_list = cls.__dict__.get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            yield from normalize_mark_list(mark_list)
++        return
++
+     mark_list = getattr(obj, "pytestmark", [])
+     if not isinstance(mark_list, list):
+         mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    yield from normalize_mark_list(mark_list)
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +399,7 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    obj.pytestmark = [*get_unpacked_marks(obj, consider_mro=False), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+2026-09-23 20:49:45,289 - INFO - Git diff changed after running eval script
+2026-09-23 20:49:45,289 - INFO - Grading answer for pytest-dev__pytest-10356...
+2026-09-23 20:49:45,292 - INFO - report: {'pytest-dev__pytest-10356': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'infra_failure': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_mark.py::test_mark_mro']}, 'PASS_TO_PASS': {'success': ['testing/test_mark.py::TestMark::test_pytest_exists_in_namespace_all[mark]', 'testing/test_mark.py::TestMark::test_pytest_exists_in_namespace_all[param]', 'testing/test_mark.py::TestMark::test_pytest_mark_notcallable', 'testing/test_mark.py::TestMark::test_mark_with_param', 'testing/test_mark.py::TestMark::test_pytest_mark_name_starts_with_underscore', 'testing/test_mark.py::TestMarkDecorator::test__eq__[lhs0-rhs0-True]', 'testing/test_mark.py::TestMarkDecorator::test__eq__[lhs1-rhs1-False]', 'testing/test_mark.py::TestMarkDecorator::test__eq__[lhs2-bar-False]', 'testing/test_mark.py::TestMarkDecorator::test__eq__[foo-rhs3-False]', 'testing/test_mark.py::TestMarkDecorator::test_aliases', 'testing/test_mark.py::test_pytest_param_id_requires_string', 'testing/test_mark.py::test_pytest_param_id_allows_none_or_string[None]', 'testing/test_mark.py::test_pytest_param_id_allows_none_or_string[hello', 'testing/test_mark.py::test_marked_class_run_twice', 'testing/test_mark.py::test_ini_markers', 'testing/test_mark.py::test_markers_option', 'testing/test_mark.py::test_ini_markers_whitespace', 'testing/test_mark.py::test_marker_without_description', 'testing/test_mark.py::test_markers_option_with_plugin_in_current_dir', 'testing/test_mark.py::test_mark_on_pseudo_function', 'testing/test_mark.py::test_strict_prohibits_unregistered_markers[--strict-markers]', 'testing/test_mark.py::test_strict_prohibits_unregistered_markers[--strict]', 'testing/test_mark.py::test_mark_option[xyz-expected_passed0]', 'testing/test_mark.py::test_mark_option[(((', 'testing/test_mark.py::test_mark_option[not', 'testing/test_mark.py::test_mark_option[xyz', 'testing/test_mark.py::test_mark_option[xyz2-expected_passed4]', 'testing/test_mark.py::test_mark_option_custom[interface-expected_passed0]', 'testing/test_mark.py::test_mark_option_custom[not', 'testing/test_mark.py::test_keyword_option_custom[interface-expected_passed0]', 'testing/test_mark.py::test_keyword_option_custom[not', 'testing/test_mark.py::test_keyword_option_custom[pass-expected_passed2]', 'testing/test_mark.py::test_keyword_option_custom[1', 'testing/test_mark.py::test_keyword_option_considers_mark', 'testing/test_mark.py::test_keyword_option_parametrize[None-expected_passed0]', 'testing/test_mark.py::test_keyword_option_parametrize[[1.3]-expected_passed1]', 'testing/test_mark.py::test_keyword_option_parametrize[2-3-expected_passed2]', 'testing/test_mark.py::test_parametrize_with_module', 'testing/test_mark.py::test_keyword_option_wrong_arguments[foo', 'testing/test_mark.py::test_keyword_option_wrong_arguments[(foo-at', 'testing/test_mark.py::test_keyword_option_wrong_arguments[or', 'testing/test_mark.py::test_keyword_option_wrong_arguments[not', 'testing/test_mark.py::test_parametrized_collected_from_command_line', 'testing/test_mark.py::test_parametrized_collect_with_wrong_args', 'testing/test_mark.py::test_parametrized_with_kwargs', 'testing/test_mark.py::test_parametrize_iterator', 'testing/test_mark.py::TestFunctional::test_merging_markers_deep', 'testing/test_mark.py::TestFunctional::test_mark_decorator_subclass_does_not_propagate_to_base', 'testing/test_mark.py::TestFunctional::test_mark_should_not_pass_to_siebling_class', 'testing/test_mark.py::TestFunctional::test_mark_decorator_baseclasses_merged', 'testing/test_mark.py::TestFunctional::test_mark_closest', 'testing/test_mark.py::TestFunctional::test_mark_with_wrong_marker', 'testing/test_mark.py::TestFunctional::test_mark_dynamically_in_funcarg', 'testing/test_mark.py::TestFunctional::test_no_marker_match_on_unmarked_names', 'testing/test_mark.py::TestFunctional::test_keywords_at_node_level', 'testing/test_mark.py::TestFunctional::test_keyword_added_for_session', 'testing/test_mark.py::TestFunctional::test_mark_from_parameters', 'testing/test_mark.py::TestFunctional::test_reevaluate_dynamic_expr', 'testing/test_mark.py::TestKeywordSelection::test_select_simple', 'testing/test_mark.py::TestKeywordSelection::test_select_extra_keywords[xxx]', 'testing/test_mark.py::TestKeywordSelection::test_select_extra_keywords[xxx', 'testing/test_mark.py::TestKeywordSelection::test_select_extra_keywords[TestClass]', 'testing/test_mark.py::TestKeywordSelection::test_select_extra_keywords[TestClass', 'testing/test_mark.py::TestKeywordSelection::test_keyword_extra', 'testing/test_mark.py::TestKeywordSelection::test_no_magic_values[__]', 'testing/test_mark.py::TestKeywordSelection::test_no_magic_values[+]', 'testing/test_mark.py::TestKeywordSelection::test_no_magic_values[..]', 'testing/test_mark.py::TestKeywordSelection::test_no_match_directories_outside_the_suite', 'testing/test_mark.py::test_parameterset_for_parametrize_marks[None]', 'testing/test_mark.py::test_parameterset_for_parametrize_marks[]', 'testing/test_mark.py::test_parameterset_for_parametrize_marks[skip]', 'testing/test_mark.py::test_parameterset_for_parametrize_marks[xfail]', 'testing/test_mark.py::test_parameterset_for_fail_at_collect', 'testing/test_mark.py::test_parameterset_for_parametrize_bad_markname', 'testing/test_mark.py::test_mark_expressions_no_smear', 'testing/test_mark.py::test_addmarker_order', 'testing/test_mark.py::test_markers_from_parametrize', 'testing/test_mark.py::test_marker_expr_eval_failure_handling[NOT', 'testing/test_mark.py::test_marker_expr_eval_failure_handling[bogus=]'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-10356: resolved: False
+2026-09-23 20:49:45,292 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-10356.routercoder-hard-20260923-2...
+2026-09-23 20:50:00,540 - INFO - Container sweb.eval.pytest-dev__pytest-10356.routercoder-hard-20260923-2 stopped successfully.
+2026-09-23 20:50:00,540 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-10356.routercoder-hard-20260923-2...
+2026-09-23 20:50:00,647 - INFO - Container sweb.eval.pytest-dev__pytest-10356.routercoder-hard-20260923-2 removed successfully.

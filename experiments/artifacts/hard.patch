@@ -1,0 +1,111 @@
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..a026e8eab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -311,6 +311,10 @@ Due to legacy reasons, before class decorators were introduced, it is possible t
+     class TestClass:
+         pytestmark = pytest.mark.webtest
+ 
++Marks on base classes are inherited by test classes, including when a test class
++inherits from multiple marked bases. Repeated marks are retained, so marks with
++the same name but different arguments can coexist.
++
+ .. _`marking individual tests when using parametrize`:
+ 
+ Marking individual tests when using parametrize
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..3a6019d2b 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -355,12 +355,23 @@ class MarkDecorator:
+         return self.with_args(*args, **kwargs)
+ 
+ 
+-def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
++def get_unpacked_marks(obj: object, *, consider_mro: bool = True) -> Iterable[Mark]:
++    """Obtain the unpacked marks that are stored on an object.
++
++    If the object is a class, include marks from its bases in reverse MRO order.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__) if consider_mro else (obj,):
++            mark_list = cls.__dict__.get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            yield from normalize_mark_list(mark_list)
++        return
++
+     mark_list = getattr(obj, "pytestmark", [])
+     if not isinstance(mark_list, list):
+         mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    yield from normalize_mark_list(mark_list)
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +399,7 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    obj.pytestmark = [*get_unpacked_marks(obj, consider_mro=False), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+diff --git a/testing/test_mark.py b/testing/test_mark.py
+index 65f2581bd..67e3a4414 100644
+--- a/testing/test_mark.py
++++ b/testing/test_mark.py
+@@ -561,6 +561,51 @@ class TestFunctional:
+         items, rec = pytester.inline_genitems(p)
+         self.assert_markers(items, test_foo=("a", "b", "c"), test_bar=("a", "b", "d"))
+ 
++    def test_mark_multiple_inheritance(self, pytester: Pytester) -> None:
++        p = pytester.makepyfile(
++            """
++            import pytest
++
++            @pytest.mark.shared(source="base")
++            class Base: pass
++
++            @pytest.mark.foo
++            class Foo(Base): pass
++
++            @pytest.mark.bar
++            class Bar(Base): pass
++
++            @pytest.mark.shared(source="child")
++            class TestDings(Foo, Bar):
++                def test_dings(self): pass
++            """
++        )
++        items, _ = pytester.inline_genitems(p)
++        assert len(items) == 1
++        marks = list(items[0].iter_markers())
++        assert [mark.name for mark in marks] == ["shared", "bar", "foo", "shared"]
++        assert [mark.kwargs["source"] for mark in marks if mark.name == "shared"] == [
++            "base", "child"
++        ]
++
++    def test_mark_multiple_inheritance_without_child_mark(self, pytester: Pytester) -> None:
++        p = pytester.makepyfile(
++            """
++            import pytest
++
++            @pytest.mark.foo
++            class Foo: pass
++
++            @pytest.mark.bar
++            class Bar: pass
++
++            class TestDings(Foo, Bar):
++                def test_dings(self): pass
++            """
++        )
++        items, _ = pytester.inline_genitems(p)
++        assert [mark.name for mark in items[0].iter_markers()] == ["bar", "foo"]
++
+     def test_mark_closest(self, pytester: Pytester) -> None:
+         p = pytester.makepyfile(
+             """

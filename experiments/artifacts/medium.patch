@@ -1,0 +1,43 @@
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..1c5b64b7b 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -345,6 +345,10 @@ class LogCaptureHandler(logging_StreamHandler):
+         self.records = []
+         self.stream = StringIO()
+ 
++    def clear(self) -> None:
++        self.records.clear()
++        self.stream = StringIO()
++
+     def handleError(self, record: logging.LogRecord) -> None:
+         if logging.raiseExceptions:
+             # Fail the test if the log message is bad (emit failed).
+@@ -440,7 +444,7 @@ class LogCaptureFixture:
+ 
+     def clear(self) -> None:
+         """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        self.handler.clear()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+diff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py
+index bcb20de58..b7f4932ef 100644
+--- a/testing/logging/test_fixture.py
++++ b/testing/logging/test_fixture.py
+@@ -146,9 +146,14 @@ def test_clear(caplog):
+     logger.info("bū")
+     assert len(caplog.records)
+     assert caplog.text
++    assert caplog.get_records("call") == caplog.records
+     caplog.clear()
+     assert not len(caplog.records)
+     assert not caplog.text
++    assert caplog.get_records("call") == caplog.records
++
++    logger.info("after clear")
++    assert caplog.get_records("call") == caplog.records
+ 
+ 
+ @pytest.fixture
