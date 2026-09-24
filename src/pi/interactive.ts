@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadModelsConfig } from "../core/config.js";
-import { DEFAULT_TRACE_DIR } from "../core/paths.js";
-import { inspectRepository } from "../repository/git.js";
+import { DEFAULT_CONFIG, DEFAULT_TRACE_DIR } from "../core/paths.js";
+import { inspectWorkspace } from "../repository/workspace.js";
 import { prepareModels } from "./runner.js";
 import { TIERS, type RouterKind, type Tier } from "../core/types.js";
 
@@ -18,7 +18,7 @@ export interface InteractiveOptions {
 export function parseInteractiveArgs(args: string[]): InteractiveOptions {
   if (args[0] !== "interactive") throw new Error("Expected 'interactive'");
   const values = new Map<string, string>();
-  const allowed = new Set(["--repo", "--router", "--tier", "--config", "--trace-dir"]);
+  const allowed = new Set(["--workspace", "--repo", "--router", "--tier", "--config", "--trace-dir"]);
   for (let i = 1; i < args.length; i += 2) {
     const flag = args[i];
     const value = args[i + 1];
@@ -28,8 +28,8 @@ export function parseInteractiveArgs(args: string[]): InteractiveOptions {
     if (values.has(flag)) throw new Error(`Duplicate option: ${flag}`);
     values.set(flag, value);
   }
-  const repo = values.get("--repo");
-  if (!repo) throw new Error("--repo is required for interactive mode");
+  if (values.has("--workspace") && values.has("--repo")) throw new Error("Use either --workspace or --repo, not both");
+  const repo = values.get("--workspace") ?? values.get("--repo") ?? process.cwd();
   const router = values.get("--router") ?? "jev";
   if (!["jev", "rule", "fixed"].includes(router)) throw new Error(`Unknown router: ${router}`);
   const tier = values.get("--tier");
@@ -38,7 +38,7 @@ export function parseInteractiveArgs(args: string[]): InteractiveOptions {
   return {
     repo: resolve(repo), router: router as RouterKind,
     ...(tier ? { tier: tier as Tier } : {}),
-    config: resolve(values.get("--config") ?? "configs/models.yaml"),
+    config: resolve(values.get("--config") ?? DEFAULT_CONFIG),
     traceDir: resolve(values.get("--trace-dir") ?? DEFAULT_TRACE_DIR),
   };
 }
@@ -47,7 +47,7 @@ export async function launchPiTui(options: InteractiveOptions): Promise<number> 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error("Interactive mode needs a terminal. Run it in a terminal window, not through a pipe.");
   }
-  const context = await inspectRepository(options.repo, "", true);
+  const context = await inspectWorkspace(options.repo, "");
   const config = await loadModelsConfig(options.config);
   await prepareModels(config);
   const piModule = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));

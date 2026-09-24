@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { run, type RunOptions } from "./app/run.js";
-import { DEFAULT_TRACE_DIR } from "./core/paths.js";
+import { DEFAULT_CONFIG, DEFAULT_TRACE_DIR } from "./core/paths.js";
 import { TIERS, type RouterKind, type Tier } from "./core/types.js";
 import { launchPiTui, parseInteractiveArgs } from "./pi/interactive.js";
 import { redact } from "./telemetry/trace.js";
@@ -11,23 +11,25 @@ export { run } from "./app/run.js";
 const HELP = `RouterCoder coding agent
 
 Usage:
-  routercoder run --repo <path> --task <text> [--router jev|rule|fixed] [--tier small|medium|strong]
-  routercoder interactive --repo <path> [--router jev|rule|fixed] [--tier small|medium|strong]
+  routercoder run --task <text> [--workspace <path>] [--router jev|rule|fixed] [--tier small|medium|strong]
+  routercoder interactive [--workspace <path>] [--router jev|rule|fixed] [--tier small|medium|strong]
 
 Options:
-  --config <path>     Model configuration (default: configs/models.yaml)
+  --workspace <path>  Target directory (default: current directory)
+  --repo <path>       Alias for --workspace
+  --config <path>     Model configuration (default: project-root/configs/models.yaml)
   --trace-dir <path>  Trace directory (default: project-root/traces)
   --help              Show this help
 
 Fixed routing requires --tier. Jev routing is the default.
-Single-run mode needs a clean Git working tree; interactive mode accepts later task edits.
+The workspace may be an ordinary directory or a Git repository.
 `;
 
 export function parseArgs(args: string[]): RunOptions | "help" {
   if (args.includes("--help") || args.includes("-h")) return "help";
   if (args[0] !== "run") throw new Error("Expected 'run'. Use --help for usage.");
   const values = new Map<string, string>();
-  const allowed = new Set(["--repo", "--task", "--router", "--tier", "--config", "--trace-dir"]);
+  const allowed = new Set(["--workspace", "--repo", "--task", "--router", "--tier", "--config", "--trace-dir"]);
   for (let i = 1; i < args.length; i += 2) {
     const flag = args[i];
     const value = args[i + 1];
@@ -37,9 +39,10 @@ export function parseArgs(args: string[]): RunOptions | "help" {
     if (values.has(flag)) throw new Error(`Duplicate option: ${flag}`);
     values.set(flag, value);
   }
-  const repo = values.get("--repo");
+  if (values.has("--workspace") && values.has("--repo")) throw new Error("Use either --workspace or --repo, not both");
+  const repo = values.get("--workspace") ?? values.get("--repo") ?? process.cwd();
   const task = values.get("--task");
-  if (!repo || !task?.trim()) throw new Error("--repo and --task are required");
+  if (!task?.trim()) throw new Error("--task is required");
   const router = values.get("--router") ?? "jev";
   if (!["jev", "rule", "fixed"].includes(router)) throw new Error(`Unknown router: ${router}`);
   const tier = values.get("--tier");
@@ -49,7 +52,7 @@ export function parseArgs(args: string[]): RunOptions | "help" {
     repo: resolve(repo), task,
     router: router as RouterKind,
     ...(tier ? { tier: tier as Tier } : {}),
-    config: resolve(values.get("--config") ?? "configs/models.yaml"),
+    config: resolve(values.get("--config") ?? DEFAULT_CONFIG),
     traceDir: resolve(values.get("--trace-dir") ?? DEFAULT_TRACE_DIR),
   };
 }

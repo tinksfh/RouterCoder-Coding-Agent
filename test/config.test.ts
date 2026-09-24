@@ -22,4 +22,11 @@ test("CLI enforces fixed tier and required task", () => {
   if (options !== "help") assert.equal(options.tier, "small");
   assert.throws(() => parseArgs(["run", "--repo", "/tmp/x", "--task", "Fix bug", "--router", "fixed"]), /requires --tier/);
   assert.throws(() => parseArgs(["run", "--repo", "/tmp/x"]), /required/);
+  const workspace = parseArgs(["run", "--workspace", "/tmp/plain", "--task", "Fix bug", "--router", "rule"]);
+  assert.notEqual(workspace, "help");
+  if (workspace !== "help") assert.match(workspace.repo, /plain$/);
+  const current = parseArgs(["run", "--task", "Fix bug", "--router", "rule"]);
+  assert.notEqual(current, "help");
+  if (current !== "help") assert.equal(current.repo, process.cwd());
+  assert.throws(() => parseArgs(["run", "--workspace", "/tmp/a", "--repo", "/tmp/b", "--task", "Fix bug"]), /either/);
 });

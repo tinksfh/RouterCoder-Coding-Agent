@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadModelsConfig } from "../core/config.js";
 import { createDecisionEngine } from "../core/decision.js";
-import { diffSnapshots, inspectRepository, snapshotWorkingTree } from "../repository/git.js";
+import { diffWorkspace, disposeSnapshot, inspectWorkspace, snapshotWorkspace, type WorkspaceSnapshot } from "../repository/workspace.js";
 import { costEstimateBasis, estimateCostUsd } from "../core/pricing.js";
 import { redact, writeTrace } from "../telemetry/trace.js";
 import { TIERS, type AgentMetrics, type RouterKind, type RunTrace, type Tier } from "../core/types.js";
@@ -10,7 +10,7 @@ import { TIERS, type AgentMetrics, type RouterKind, type RunTrace, type Tier } f
 interface ActiveRun {
   trace: RunTrace;
   started: number;
-  beforeTree?: string;
+  beforeSnapshot?: WorkspaceSnapshot;
   metrics: AgentMetrics;
   tools: Map<string, { count: number; errors: number }>;
   modelsUsed: Set<string>;
@@ -63,11 +63,13 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
 
   async function finish(run: ActiveRun, ctx: ExtensionContext, failure?: string): Promise<void> {
     const trace = run.trace;
-    if (run.beforeTree) {
+    if (run.beforeSnapshot) {
       try {
-        trace.diff = await diffSnapshots(trace.repoPath, run.beforeTree, await snapshotWorkingTree(trace.repoPath));
+        trace.diff = await diffWorkspace(run.beforeSnapshot);
       } catch (cause) {
         failure ??= `Could not capture task diff: ${errorMessage(cause)}`;
+      } finally {
+        await disposeSnapshot(run.beforeSnapshot);
       }
     }
     run.metrics.toolCalls = [...run.tools].map(([name, counts]) => ({ name, ...counts }));
@@ -107,10 +109,10 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
     active = run;
     status(ctx, "RouterCoder: routing...");
     try {
-      const context = await inspectRepository(ctx.cwd, prompt, true);
+      const context = await inspectWorkspace(ctx.cwd, prompt);
       run.trace.repoPath = context.repoPath;
       run.trace.commit = context.commit;
-      run.beforeTree = await snapshotWorkingTree(context.repoPath);
+      run.beforeSnapshot = await snapshotWorkspace(context.repoPath);
       const decision = await engine.decide(context);
       run.trace.decision = decision;
       const selected = config.models[decision.tier];

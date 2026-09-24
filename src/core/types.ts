@@ -20,7 +20,7 @@ export interface ModelsConfig {
 export interface TaskContext {
   task: string;
   repoPath: string;
-  commit: string;
+  commit: string | null;
   trackedFiles: number;
   languages: string[];
 }

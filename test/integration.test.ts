@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -53,7 +53,7 @@ test("CLI runs Pi in a temporary repository for all tiers and records traces", {
     const config = join(agentDir, "models.yaml");
     await writeFile(config, `models:\n${["small", "medium", "strong"].map((tier) => `  ${tier}: { provider: mock, model: ${tier}, contextWindow: 128000, inputPricePerMillion: 1, outputPricePerMillion: 2 }`).join("\n")}\n`);
     for (const tier of ["small", "medium", "strong"] as const) {
-      const { stdout: repoText } = await exec("bash", ["scripts/create-demo-repo.sh"], { cwd: project });
+      const { stdout: repoText } = await exec(process.execPath, ["scripts/create-demo-repo.mjs"], { cwd: project });
       const repo = repoText.trim();
       const args = ["--import", "tsx", "src/cli.ts", "run", "--repo", repo, "--task", "Fix the addition test", "--config", config, "--trace-dir", traceDir];
       if (tier === "strong") args.push("--router", "jev");
@@ -75,9 +75,25 @@ test("CLI runs Pi in a temporary repository for all tiers and records traces", {
       const { stdout: answer } = await exec(process.execPath, ["--input-type=module", "-e", "import('./src/math.js').then(({add}) => console.log(add(1, 2)))"], { cwd: repo });
       assert.equal(answer.trim(), "3");
     }
+    const plainDirectory = await mkdtemp(join(tmpdir(), "routercoder-plain-test-"));
+    await mkdir(join(plainDirectory, "src"));
+    await writeFile(join(plainDirectory, "src", "math.js"), "export function add(a, b) { return a - b; }\n");
+    const { stdout: plainOutput, stderr: plainError } = await exec(process.execPath,
+      ["--import", "tsx", "src/cli.ts", "run", "--repo", plainDirectory,
+        "--task", "Fix the addition test", "--router", "fixed", "--tier", "small",
+        "--config", config, "--trace-dir", traceDir], {
+        cwd: project, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir }, timeout: 30_000,
+      });
+    assert.equal(plainError, "");
+    const plainTracePath = plainOutput.match(/^Trace: (.+)$/m)?.[1];
+    assert.ok(plainTracePath, plainOutput);
+    const plainTrace = JSON.parse(await readFile(plainTracePath, "utf8"));
+    assert.equal(plainTrace.commit, null);
+    assert.equal(plainTrace.status, "success", JSON.stringify(plainTrace.error));
+    assert.match(plainTrace.diff, /return a \+ b/);
     const badConfig = join(agentDir, "bad-models.yaml");
     await writeFile(badConfig, (await readFile(config, "utf8")).replace("model: small", "model: unavailable"));
-    const { stdout: badRepoText } = await exec("bash", ["scripts/create-demo-repo.sh"], { cwd: project });
+    const { stdout: badRepoText } = await exec(process.execPath, ["scripts/create-demo-repo.mjs"], { cwd: project });
     const secret = "test-only-secret-1234567890";
     try {
       await exec(process.execPath, ["--import", "tsx", "src/cli.ts", "run", "--repo", badRepoText.trim(),
