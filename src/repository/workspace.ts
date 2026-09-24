@@ -60,7 +60,11 @@ export async function inspectWorkspace(path: string, task: string): Promise<Task
     if (language) counts.set(language, (counts.get(language) ?? 0) + 1);
   }
   const languages = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name);
-  return { task, repoPath: directory, commit, trackedFiles: files.length, languages };
+  return {
+    task, repoPath: directory, commit, trackedFiles: files.length, languages,
+    sampleFiles: files.slice(0, 60).map((file) => file.startsWith(directory) ? file.slice(directory.length + 1) : file),
+    workspaceKind: files.length === 0 ? "empty" : "existing",
+  };
 }
 
 export interface WorkspaceSnapshot {

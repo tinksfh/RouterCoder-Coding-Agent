@@ -47,9 +47,15 @@ export function parseModelsConfig(input: string): ModelsConfig {
   }
   const rawModels = parsed.models;
   const models = Object.fromEntries(TIERS.map((tier) => [tier, readModel(rawModels[tier], tier)])) as Record<Tier, ModelConfig>;
+  if (parsed.allowDuplicateModels !== undefined && typeof parsed.allowDuplicateModels !== "boolean") {
+    throw new Error("allowDuplicateModels must be true or false");
+  }
+  const allowDuplicateModels = parsed.allowDuplicateModels === true;
   const ids = TIERS.map((tier) => `${models[tier].provider}/${models[tier].model}`);
-  if (new Set(ids).size !== 3) throw new Error("Small, medium and strong must use distinct models");
-  return { models };
+  if (!allowDuplicateModels && new Set(ids).size !== 3) {
+    throw new Error("Small, medium and strong must use distinct models unless allowDuplicateModels is true");
+  }
+  return { models, allowDuplicateModels };
 }
 
 export async function loadModelsConfig(path: string): Promise<ModelsConfig> {

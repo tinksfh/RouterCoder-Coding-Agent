@@ -15,6 +15,7 @@ export interface ModelConfig {
 
 export interface ModelsConfig {
   models: Record<Tier, ModelConfig>;
+  allowDuplicateModels?: boolean;
 }
 
 export interface TaskContext {
@@ -23,6 +24,67 @@ export interface TaskContext {
   commit: string | null;
   trackedFiles: number;
   languages: string[];
+  sampleFiles?: string[];
+  workspaceKind?: "empty" | "existing";
+}
+
+export interface PlannedSubtask {
+  id: string;
+  description: string;
+  acceptanceCriteria: string[];
+}
+
+export interface TaskPlan {
+  source: "model" | "direct" | "fallback";
+  plannerModel: string;
+  subtasks: PlannedSubtask[];
+  metrics: AgentMetrics;
+  error?: string;
+}
+
+export interface QualityCheck {
+  name: string;
+  command: string;
+  status: "passed" | "failed" | "unavailable";
+  exitCode: number | null;
+  durationMs: number;
+  output: string;
+}
+
+export interface QualityAssessment {
+  score: number | null;
+  status: "verified" | "estimated" | "failed" | "unverified";
+  checks: QualityCheck[];
+  note: string;
+  requirementReview?: {
+    score: number;
+    confidence: number;
+    evidence: string[];
+    model: string;
+    priceSnapshot: ModelConfig;
+    metrics: AgentMetrics;
+  };
+  reviewAttempt?: {
+    model: string;
+    priceSnapshot: ModelConfig;
+    metrics: AgentMetrics;
+    error: string;
+  };
+}
+
+export interface SubtaskTrace {
+  plan: PlannedSubtask;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  decision: Decision | null;
+  selectedModel: { tier: Tier; provider: string; model: string } | null;
+  priceSnapshot: ModelConfig | null;
+  costEstimateBasis: string | null;
+  agent: AgentResult | null;
+  diff: string;
+  status: "success" | "failed";
+  error: string | null;
 }
 
 export interface Decision {
@@ -75,4 +137,7 @@ export interface RunTrace {
   agent: AgentResult | null;
   diff: string;
   error: string | null;
+  plan?: TaskPlan | null;
+  subtasks?: SubtaskTrace[];
+  quality?: QualityAssessment | null;
 }

@@ -76,15 +76,21 @@ export class JevDecisionEngine implements DecisionEngine {
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: this.model,
-          state: { task: context.task, languages: context.languages, tracked_files: context.trackedFiles },
+          state: {
+            task: context.task,
+            workspace_kind: context.workspaceKind ?? (context.trackedFiles === 0 ? "empty" : "existing"),
+            languages: context.languages,
+            tracked_files: context.trackedFiles,
+            sample_files: context.sampleFiles ?? [],
+          },
           questions: {
             difficulty: {
               type: "choice",
-              instructions: "Assess the coding and repository reasoning required to complete the requested code change. Choose one difficulty level.",
+              instructions: "Assess the coding work needed for this task, including creating a project from an empty workspace when applicable. Choose one difficulty level based on requirements, implementation scope and integration risk. Do not infer that an empty workspace alone is easy or hard.",
               criteria: {
-                easy: "A narrow, well-specified change such as a typo, documentation, or one simple function.",
-                medium: "Ordinary debugging or implementation involving multiple steps or files.",
-                hard: "Cross-module reasoning, architecture changes, difficult algorithms, or high-risk fixes.",
+                easy: "A narrow, well-specified change or a small standalone program with few requirements.",
+                medium: "Ordinary debugging or implementation with several components, steps or acceptance requirements.",
+                hard: "Complex integration, architecture, difficult algorithms, broad requirements or high-risk fixes.",
               },
             },
           },
