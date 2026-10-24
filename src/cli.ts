@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { run, type RunOptions } from "./app/run.js";
 import { DEFAULT_CONFIG, DEFAULT_TRACE_DIR } from "./core/paths.js";
+import { parseJevInputMode } from "./core/decision.js";
 import { TIERS, type RouterKind, type Tier } from "./core/types.js";
 import { launchPiTui, parseInteractiveArgs } from "./pi/interactive.js";
 import { redact } from "./telemetry/trace.js";
@@ -19,6 +20,7 @@ Options:
   --repo <path>       Alias for --workspace
   --config <path>     Model configuration (default: project-root/configs/models.yaml)
   --trace-dir <path>  Trace directory (default: project-root/traces)
+  --jev-input <mode>  Jev input: baseline|hint|analysis (default: analysis)
   --help              Show this help
 
 Fixed routing requires --tier. Jev routing is the default.
@@ -29,7 +31,7 @@ export function parseArgs(args: string[]): RunOptions | "help" {
   if (args.includes("--help") || args.includes("-h")) return "help";
   if (args[0] !== "run") throw new Error("Expected 'run'. Use --help for usage.");
   const values = new Map<string, string>();
-  const allowed = new Set(["--workspace", "--repo", "--task", "--router", "--tier", "--config", "--trace-dir"]);
+  const allowed = new Set(["--workspace", "--repo", "--task", "--router", "--tier", "--config", "--trace-dir", "--jev-input"]);
   for (let i = 1; i < args.length; i += 2) {
     const flag = args[i];
     const value = args[i + 1];
@@ -48,10 +50,13 @@ export function parseArgs(args: string[]): RunOptions | "help" {
   const tier = values.get("--tier");
   if (router === "fixed" && !TIERS.includes(tier as Tier)) throw new Error("--router fixed requires --tier small|medium|strong");
   if (router !== "fixed" && tier) throw new Error("--tier can only be used with --router fixed");
+  if (router !== "jev" && values.has("--jev-input")) throw new Error("--jev-input can only be used with --router jev");
+  const jevInput = values.has("--jev-input") ? parseJevInputMode(values.get("--jev-input")) : undefined;
   return {
     repo: resolve(repo), task,
     router: router as RouterKind,
     ...(tier ? { tier: tier as Tier } : {}),
+    ...(jevInput ? { jevInput } : {}),
     config: resolve(values.get("--config") ?? DEFAULT_CONFIG),
     traceDir: resolve(values.get("--trace-dir") ?? DEFAULT_TRACE_DIR),
   };

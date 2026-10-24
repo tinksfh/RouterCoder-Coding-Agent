@@ -2,6 +2,25 @@ export const TIERS = ["small", "medium", "strong"] as const;
 export type Tier = (typeof TIERS)[number];
 export type Difficulty = "easy" | "medium" | "hard";
 export type RouterKind = "jev" | "rule" | "fixed";
+export const JEV_INPUT_MODES = ["baseline", "hint", "analysis"] as const;
+export type JevInputMode = (typeof JEV_INPUT_MODES)[number];
+
+export interface ComplexityFactors {
+  changeScope: string;
+  dependencies: string;
+  integrationRisk: string;
+  uncertainties: string[];
+  confirmedFacts: { statement: string; evidenceIds: string[] }[];
+  assumptions: string[];
+}
+
+export interface PlannerAnalysis {
+  plannerModel: string;
+  complexityHint?: Difficulty;
+  complexityFactors?: ComplexityFactors;
+  evidenceBasis: "planning_snapshot";
+  evidence: CodeEvidence[];
+}
 
 export interface ModelConfig {
   provider: string;
@@ -26,18 +45,62 @@ export interface TaskContext {
   languages: string[];
   sampleFiles?: string[];
   workspaceKind?: "empty" | "existing";
+  plannerAnalysis?: PlannerAnalysis;
 }
 
 export interface PlannedSubtask {
   id: string;
   description: string;
   acceptanceCriteria: string[];
+  requirementIds: string[];
+  dependsOn: string[];
+  inputs: string[];
+  outputs: string[];
+  expectedFiles: string[];
+  verification: string[];
+  rationale: string;
+  evidenceIds: string[];
+  complexityHint?: Difficulty;
+  complexityFactors?: ComplexityFactors;
+}
+
+export interface TaskRequirement {
+  id: string;
+  description: string;
+  sourceQuote: string;
+}
+
+export interface CodeEvidence {
+  id: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  excerpt: string;
+  sha256: string;
+}
+
+export interface PlanningInspection {
+  evidence: CodeEvidence[];
+  filesConsidered: number;
+  truncated: boolean;
+  notes: string[];
+}
+
+export interface PlanValidation {
+  status: "passed" | "fallback";
+  attempts: number;
+  errors: string[];
+  warnings: string[];
 }
 
 export interface TaskPlan {
   source: "model" | "direct" | "fallback";
   plannerModel: string;
   subtasks: PlannedSubtask[];
+  requirements: TaskRequirement[];
+  rationale: string;
+  inspection: PlanningInspection;
+  validation: PlanValidation;
   metrics: AgentMetrics;
   error?: string;
 }
@@ -97,6 +160,9 @@ export interface Decision {
   fallback: boolean;
   jevModel?: string;
   jevUsage?: { inputTokens: number; outputTokens: number };
+  /** Exact request state (without authorization), including the input ablation mode. */
+  jevInput?: { mode: JevInputMode; state: Record<string, unknown> };
+  plannerComparison?: { hint: Difficulty; jevDifficulty: Difficulty | null; disagrees: boolean | null };
 }
 
 export interface DecisionEngine {

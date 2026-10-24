@@ -3,8 +3,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { combinedMetrics } from "../app/run.js";
 import { evaluateTask } from "../app/evaluation.js";
 import { planTask } from "../app/planning.js";
+import { assertDependenciesCompleted, describeTaskPlan, subtaskExecutionPrompt, subtaskRoutingContext, subtaskRoutingText } from "../app/task-plan.js";
 import { loadModelsConfig } from "../core/config.js";
-import { createDecisionEngine } from "../core/decision.js";
+import { createDecisionEngine, describePlannerComparison, parseJevInputMode } from "../core/decision.js";
 import { costEstimateBasis, estimateCostUsd } from "../core/pricing.js";
 import type { AgentMetrics, RouterKind, RunTrace, SubtaskTrace, Tier } from "../core/types.js";
 import { TIERS } from "../core/types.js";
@@ -63,13 +64,7 @@ function newTask(task: string, repoPath: string, router: RouterKind): ActiveTask
 function stepPrompt(task: ActiveTask, index: number): string {
   const plan = task.trace.plan;
   if (!plan) throw new Error("Task plan missing");
-  const step = plan.subtasks[index];
-  return [
-    `用户总目标：${task.trace.task}`,
-    `当前子任务（${step.id}/${plan.subtasks.length}）：${step.description}`,
-    step.acceptanceCriteria.length ? `当前子任务验收点：\n${step.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}` : "",
-    "只完成当前子任务，保留工作区中前面子任务的结果。",
-  ].filter(Boolean).join("\n\n");
+  return subtaskExecutionPrompt(task.trace.task, plan, index, task.trace.subtasks ?? []);
 }
 
 export default async function routerCoderExtension(pi: ExtensionAPI): Promise<void> {
@@ -85,7 +80,7 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
   }
   const config = await loadModelsConfig(configPath);
   const prepared = await prepareModels(config);
-  const engine = createDecisionEngine(router, tier);
+  const engine = createDecisionEngine(router, tier, parseJevInputMode(process.env.ROUTERCODER_JEV_INPUT));
   let active: ActiveTask | undefined;
 
   async function finishStep(task: ActiveTask, failure?: string): Promise<boolean> {
@@ -174,6 +169,7 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
     if (!plan) throw new Error("Task plan missing");
     const planned = plan.subtasks[task.nextIndex];
     if (!planned) throw new Error("Subtask index out of range");
+    assertDependenciesCompleted(planned, task.trace.subtasks ?? []);
     const started = Date.now();
     const stepTrace: SubtaskTrace = {
       plan: planned, startedAt: new Date(started).toISOString(), endedAt: "", durationMs: 0,
@@ -186,9 +182,9 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
     };
     task.current = step;
     status(ctx, `RouterCoder: routing ${task.nextIndex + 1}/${plan.subtasks.length}`);
-    const context = await inspectWorkspace(task.trace.repoPath, [planned.description, ...planned.acceptanceCriteria].join("\n"));
+    const context = await inspectWorkspace(task.trace.repoPath, subtaskRoutingText(planned));
     step.snapshot = await snapshotWorkspace(context.repoPath);
-    stepTrace.decision = await engine.decide(context);
+    stepTrace.decision = await engine.decide(subtaskRoutingContext(context, plan, planned));
     const selected = config.models[stepTrace.decision.tier];
     stepTrace.selectedModel = { tier: stepTrace.decision.tier, provider: selected.provider, model: selected.model };
     stepTrace.priceSnapshot = selected;
@@ -203,6 +199,8 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
     if (!model || !await pi.setModel(model)) throw new Error(`Pi model unavailable: ${selected.provider}/${selected.model}`);
     status(ctx, `RouterCoder: ${task.nextIndex + 1}/${plan.subtasks.length} ${stepTrace.decision.tier.toUpperCase()} locked`);
     ctx.ui.notify(`RouterCoder ${planned.id}: ${stepTrace.decision.tier.toUpperCase()} (${selected.provider}/${selected.model}); ${redact(stepTrace.decision.reason)}`);
+    const comparison = describePlannerComparison(stepTrace.decision);
+    if (comparison) ctx.ui.notify(redact(comparison));
     return stepPrompt(task, task.nextIndex);
   }
 
@@ -215,9 +213,12 @@ export default async function routerCoderExtension(pi: ExtensionAPI): Promise<vo
       task.trace.repoPath = context.repoPath;
       task.trace.commit = context.commit;
       task.snapshot = await snapshotWorkspace(context.repoPath);
-      task.trace.plan = await planTask(context, prepared, config.models.strong);
+      task.trace.plan = await planTask(context, prepared, config.models.strong, {
+        onProgress: (_stage, message) => status(ctx, `RouterCoder: ${redact(message)}`),
+      });
       if (task.trace.plan.error) ctx.ui.notify(`RouterCoder planning fallback: ${redact(task.trace.plan.error)}`, "warning");
       ctx.ui.notify(`RouterCoder plan: ${task.trace.plan.subtasks.length} subtask(s)`);
+      pi.sendMessage({ customType: "routercoder-plan", content: redact(describeTaskPlan(task.trace.plan)), display: true }, { triggerTurn: false });
       return await beginStep(task, ctx);
     } catch (cause) {
       if (task.current) await finishStep(task, errorMessage(cause));

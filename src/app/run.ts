@@ -1,19 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { loadModelsConfig } from "../core/config.js";
-import { createDecisionEngine } from "../core/decision.js";
+import { createDecisionEngine, describePlannerComparison } from "../core/decision.js";
 import { costEstimateBasis } from "../core/pricing.js";
-import type { AgentMetrics, AgentResult, RouterKind, RunTrace, SubtaskTrace, Tier } from "../core/types.js";
+import type { AgentMetrics, AgentResult, JevInputMode, RouterKind, RunTrace, SubtaskTrace, Tier } from "../core/types.js";
 import { prepareModels, runPiAgent } from "../pi/runner.js";
 import { diffWorkspace, disposeSnapshot, inspectWorkspace, snapshotWorkspace, type WorkspaceSnapshot } from "../repository/workspace.js";
 import { redact, writeTrace } from "../telemetry/trace.js";
 import { evaluateTask } from "./evaluation.js";
 import { planTask } from "./planning.js";
+import { assertDependenciesCompleted, describeTaskPlan, subtaskExecutionPrompt, subtaskRoutingContext, subtaskRoutingText } from "./task-plan.js";
 
 export interface RunOptions {
   repo: string;
   task: string;
   router: RouterKind;
   tier?: Tier;
+  jevInput?: JevInputMode;
   config: string;
   traceDir: string;
 }
@@ -57,10 +59,13 @@ export async function run(options: RunOptions): Promise<{ tracePath: string; suc
     const config = await loadModelsConfig(options.config);
     const prepared = await prepareModels(config);
     snapshot = await snapshotWorkspace(context.repoPath);
-    trace.plan = await planTask(context, prepared, config.models.strong);
+    trace.plan = await planTask(context, prepared, config.models.strong, {
+      onProgress: (_stage, message) => console.log(`Planning: ${redact(message)}`),
+    });
     if (trace.plan.error) console.error(`Planning fallback: ${redact(trace.plan.error)}`);
     console.log(`Plan: ${trace.plan.subtasks.length} subtask(s)`);
-    const engine = createDecisionEngine(options.router, options.tier);
+    console.log(redact(describeTaskPlan(trace.plan)));
+    const engine = createDecisionEngine(options.router, options.tier, options.jevInput);
     for (const planned of trace.plan.subtasks) {
       const stepStarted = Date.now();
       const step: SubtaskTrace = {
@@ -71,9 +76,10 @@ export async function run(options: RunOptions): Promise<{ tracePath: string; suc
       trace.subtasks!.push(step);
       let stepSnapshot: WorkspaceSnapshot | undefined;
       try {
-        const updated = await inspectWorkspace(context.repoPath, [planned.description, ...planned.acceptanceCriteria].join("\n"));
+        assertDependenciesCompleted(planned, trace.subtasks!);
+        const updated = await inspectWorkspace(context.repoPath, subtaskRoutingText(planned));
         stepSnapshot = await snapshotWorkspace(context.repoPath);
-        step.decision = await engine.decide(updated);
+        step.decision = await engine.decide(subtaskRoutingContext(updated, trace.plan, planned));
         const selected = config.models[step.decision.tier];
         step.selectedModel = { tier: step.decision.tier, provider: selected.provider, model: selected.model };
         step.priceSnapshot = selected;
@@ -88,12 +94,9 @@ export async function run(options: RunOptions): Promise<{ tracePath: string; suc
           ? `Route: ${step.decision.tier} (${selected.provider}/${selected.model})`
           : `Route ${planned.id}: ${step.decision.tier} (${selected.provider}/${selected.model})`);
         console.log(`Reason: ${redact(step.decision.reason)}`);
-        const prompt = [
-          `用户总目标：${options.task}`,
-          `当前子任务（${planned.id}/${trace.plan.subtasks.length}）：${planned.description}`,
-          planned.acceptanceCriteria.length ? `当前子任务验收点：\n${planned.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}` : "",
-          "只完成当前子任务，保留工作区中前面子任务的结果。",
-        ].filter(Boolean).join("\n\n");
+        const comparison = describePlannerComparison(step.decision);
+        if (comparison) console.log(redact(comparison));
+        const prompt = subtaskExecutionPrompt(options.task, trace.plan, trace.plan.subtasks.indexOf(planned), trace.subtasks!);
         step.agent = await runPiAgent(context.repoPath, prompt, prepared, step.decision.tier, selected);
         step.diff = await diffWorkspace(stepSnapshot);
         if (!step.agent.success) throw new Error(step.agent.error ?? "Pi agent failed");

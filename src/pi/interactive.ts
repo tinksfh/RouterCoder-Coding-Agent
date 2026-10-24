@@ -2,15 +2,17 @@ import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadModelsConfig } from "../core/config.js";
+import { parseJevInputMode } from "../core/decision.js";
 import { DEFAULT_CONFIG, DEFAULT_TRACE_DIR } from "../core/paths.js";
 import { inspectWorkspace } from "../repository/workspace.js";
 import { prepareModels } from "./runner.js";
-import { TIERS, type RouterKind, type Tier } from "../core/types.js";
+import { TIERS, type JevInputMode, type RouterKind, type Tier } from "../core/types.js";
 
 export interface InteractiveOptions {
   repo: string;
   router: RouterKind;
   tier?: Tier;
+  jevInput?: JevInputMode;
   config: string;
   traceDir: string;
 }
@@ -18,7 +20,7 @@ export interface InteractiveOptions {
 export function parseInteractiveArgs(args: string[]): InteractiveOptions {
   if (args[0] !== "interactive") throw new Error("Expected 'interactive'");
   const values = new Map<string, string>();
-  const allowed = new Set(["--workspace", "--repo", "--router", "--tier", "--config", "--trace-dir"]);
+  const allowed = new Set(["--workspace", "--repo", "--router", "--tier", "--config", "--trace-dir", "--jev-input"]);
   for (let i = 1; i < args.length; i += 2) {
     const flag = args[i];
     const value = args[i + 1];
@@ -35,9 +37,12 @@ export function parseInteractiveArgs(args: string[]): InteractiveOptions {
   const tier = values.get("--tier");
   if (router === "fixed" && !TIERS.includes(tier as Tier)) throw new Error("--router fixed requires --tier small|medium|strong");
   if (router !== "fixed" && tier) throw new Error("--tier can only be used with --router fixed");
+  if (router !== "jev" && values.has("--jev-input")) throw new Error("--jev-input can only be used with --router jev");
+  const jevInput = values.has("--jev-input") ? parseJevInputMode(values.get("--jev-input")) : undefined;
   return {
     repo: resolve(repo), router: router as RouterKind,
     ...(tier ? { tier: tier as Tier } : {}),
+    ...(jevInput ? { jevInput } : {}),
     config: resolve(values.get("--config") ?? DEFAULT_CONFIG),
     traceDir: resolve(values.get("--trace-dir") ?? DEFAULT_TRACE_DIR),
   };
@@ -65,6 +70,7 @@ export async function launchPiTui(options: InteractiveOptions): Promise<number> 
       ROUTERCODER_CONFIG: options.config,
       ROUTERCODER_ROUTER: options.router,
       ROUTERCODER_TIER: options.tier ?? "",
+      ROUTERCODER_JEV_INPUT: options.jevInput ?? "analysis",
       ROUTERCODER_TRACE_DIR: options.traceDir,
     },
   });

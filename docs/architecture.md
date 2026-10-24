@@ -6,7 +6,10 @@
 | --- | --- | --- |
 | `src/cli.ts` | 解析命令行参数，分发单次或交互模式 | `parseArgs`、`main` |
 | `src/app/run.ts` | 编排单次任务、保存结果 | `run` |
-| `src/app/planning.ts` | 用固定 Strong 模型规划有序子任务；简单任务直接执行 | `planTask` |
+| `src/app/planning.ts` | 固定 Strong 提取需求，以只读代码依据规划并提供复杂度分析，最多修正一次 | `planTask` |
+| `src/app/plan-validation.ts` | 校验需求引用、覆盖、依赖、接口消费、可选复杂度字段与事实引用 | `parseRequirements`、`parseAndValidatePlan` |
+| `src/app/task-plan.ts` | 共用规划展示、路由上下文和执行契约，检查前置步骤状态 | `describeTaskPlan`、`subtaskRoutingContext`、`subtaskExecutionPrompt` |
+| `src/repository/inspection.ts` | 只读筛选源码和测试片段，记录路径、行号与片段哈希 | `inspectPlanningCode` |
 | `src/app/evaluation.ts` | 发现并运行本地自动检查，调用只读需求评估器，生成质量状态 | `evaluateTask` |
 | `src/core/` | 校验三档模型配置、执行难度路由、计算模拟费用、定义共享类型 | `config.ts`、`decision.ts`、`pricing.ts`、`types.ts` |
 | `src/pi/` | 启动 Pi、对子任务逐步切换模型、运行单次 Pi 会话 | `interactive.ts`、`extension.ts`、`runner.ts` |
@@ -25,8 +28,11 @@
 
 ```mermaid
 flowchart LR
-  A[用户任务与空目录或已有项目] --> B[检查工作区并规划子任务]
-  B --> C[逐步调用 Jev 判断难度]
+  A[用户任务与空目录或已有项目] --> B[检查工作区并提取需求]
+  B --> I[只读源码、接口与测试片段]
+  I --> P[按功能与依赖规划子任务]
+  P --> V[检查覆盖、重复与执行顺序]
+  V --> C[逐步调用 Jev 判断难度]
   C --> D[映射 small/medium/strong]
   D --> E[Pi 切换模型并执行当前子任务]
   E --> F{还有子任务?}
@@ -37,13 +43,17 @@ flowchart LR
 
 单次模式由 `cli.ts` 调用 `app/run.ts`。交互模式由 `pi/interactive.ts` 启动 Pi 并加载 `pi/extension.ts`；扩展拦截用户任务，规划后逐步发起子任务，在每步开始前完成路由和模型切换。两种模式都计算总任务及每步差异，允许已有修改。空目录、普通目录和没有提交的 Git 仓库也可作为目标；未指定 `--workspace` 时使用当前目录。
 
-两种模式共用 `app/planning.ts` 的规划逻辑、`core/decision.ts` 的路由策略和 `core/config.ts` 的模型配置。短小的现有项目任务直接执行；其余任务由固定 Strong 模型规划为最多六个有序子任务。Jev 请求包含当前子任务、目录语言、文件数、工作区是否为空和部分路径；Pi 在选定模型后读取具体代码。Jev 调用失败或置信度低于 `0.60` 时，该步使用 Strong 档，原因会写入运行记录。
+两种模式共用 `app/planning.ts` 的规划逻辑、`core/decision.ts` 的路由策略和 `core/config.ts` 的模型配置。所有任务由固定 Strong 模型先提取需求，再依据 `repository/inspection.ts` 的局部代码片段划分为一到六个有序子任务。简单任务可以只保留一步；不再按文本长度跳过规划。需求提取和规划均不暴露写文件或 shell 工具。规划结构检查不合格时最多修正一次，再失败则保留完整原任务执行，并明确记录 fallback。Jev 请求保留当前子任务、验收点与目录摘要，默认补充可选的复杂度标签、分析和相关代码片段；Pi 在选定模型后读取执行所需的代码。Jev 调用失败或置信度低于 `0.60` 时，该步使用 Strong 档，原因会写入运行记录。
+
+规划器与 Jev 共用 `CODING_DIFFICULTY_CRITERIA`。规划器区分有实际片段引用的 `confirmedFacts`、未确认的 `assumptions` 与 `uncertainties`；Jev 被要求独立判断，不直接采纳标签。`--jev-input baseline|hint|analysis` 控制补充信息，默认完整分析；CLI 和 Pi 扩展通过 `subtaskRoutingContext` 共用同一上下文。片段标记为规划快照，不能视为每步执行前的实时源码。两者分类不一致只记录，不额外升级、不平均结果；缺少复杂度信息时仍可正常分类。
 
 ## 运行记录与结果含义
 
-默认记录目录为项目根目录的 `traces/`，可通过 `--trace-dir` 改写。`plan` 保存子任务和规划成本；`subtasks` 保存每步路由、模型、工具调用和差异；`agent.metrics` 汇总规划、执行和评估用量；`quality` 保存自动检查、需求估计、置信度及证据；顶层 `diff` 保存总差异。多子任务时，顶层 `decision` 和 `selectedModel` 为 `null`，实际选择在各子任务中。
+默认记录目录为项目根目录的 `traces/`，可通过 `--trace-dir` 改写。`plan` 保存需求原文引用、代码片段依据、边界理由、子任务与依赖契约、校验历史和规划成本；`subtasks` 保存每步路由、模型、工具调用和差异；`agent.metrics` 汇总规划、执行和评估用量；`quality` 保存自动检查、需求估计、置信度及证据；顶层 `diff` 保存总差异。多子任务时，顶层 `decision` 和 `selectedModel` 为 `null`，实际选择在各子任务中。
 
-每个子任务要求 Pi 无错误完成且产生代码差异。最终还会尝试运行工作区已有的 Node.js、Python、Go 或 Rust 构建和测试命令；发现并运行的检查有失败时顶层任务失败。只读 Strong 模型用任务、验收点、最终差异和检查输出估计需求满足度。最终分数取检查通过比例与模型估计的较低值；没有可运行检查时使用模型估计并标为 `estimated`。分数低于 70 时顶层任务失败；评估不可用时仅保留本地检查结果。检查可能由执行模型自行创建，模型只读取有限差异，均不能保证所有用户需求已经满足。规划、执行与评估的模拟费用会累加；Jev 费用尚未计入。
+每步 `plan` 可含 `complexityHint` 和 `complexityFactors`；Jev `decision.jevInput` 保存请求状态与输入模式，`plannerComparison` 保存规划初判、Jev 原始分类和分歧（请求失败为 `null`）。这些记录帮助定位判断依据，不证明路由准确率提高。Jev 输入费用仍未纳入总费用估算。
+
+每步开始前检查所有 `dependsOn` 步骤已成功结束，将其实际执行摘要、`inputs` / `outputs` 契约和本步覆盖的需求传给 Pi。每个子任务要求 Pi 无错误完成且产生代码差异。最终还会尝试运行工作区已有的 Node.js、Python、Go 或 Rust 构建和测试命令；发现并运行的检查有失败时顶层任务失败。只读 Strong 模型用任务、验收点、最终差异和检查输出估计需求满足度。最终分数取检查通过比例与模型估计的较低值；没有可运行检查时使用模型估计并标为 `estimated`。分数低于 70 时顶层任务失败；评估不可用时仅保留本地检查结果。检查可能由执行模型自行创建，模型只读取有限差异，均不能保证所有用户需求已经满足。规划、执行与评估的模拟费用会累加；Jev 费用尚未计入。
 
 ## 修改位置
 
@@ -51,8 +61,12 @@ flowchart LR
 - 修改三档模型、上下文长度和价格：`configs/models.yaml`；共享样例同步修改 `configs/models.example.yaml`。
 - 修改 Pi 交互任务的模型切换与轮次记录：`src/pi/extension.ts`。
 - 修改单次运行流程：`src/app/run.ts`。
-- 修改子任务规划或自动检查：`src/app/planning.ts`、`src/app/evaluation.ts`。
+- 修改子任务规划、结构检查和执行提示：`src/app/planning.ts`、`src/app/plan-validation.ts`、`src/app/task-plan.ts`。
+- 修改规划的源码筛选与读取预算：`src/repository/inspection.ts`。
+- 修改结果自动检查：`src/app/evaluation.ts`。
 - 修改目录摘要或差异捕获：`src/repository/workspace.ts`。
 - 修改运行记录格式或脱敏：`src/telemetry/trace.ts` 和 `src/core/types.ts`。
 
 源码编译到 `dist/`，`dist/cli.js` 是对外命令入口。`npm run build` 会先清理旧的编译文件，避免目录调整后遗留过期模块，再生成新的输出。修改源码后重新构建，再启动 RouterCoder。
+
+拆分原则、结构校验的边界、局部代码阅读预算与异常处理详见 [子任务规划说明](task-planning.md)。

@@ -1,6 +1,6 @@
 # RouterCoder 编码智能体
 
-RouterCoder 是一个按子任务选择模型的编码智能体。它接收一条 coding 任务，在需要时先规划为有序子任务，再由 Jev 为每个子任务判断难度，从三档模型中选出一档，交给 Pi 执行。目标目录可以是空文件夹、已有代码的普通文件夹或 Git 仓库。每次运行都会保存规划、逐步路由、实际模型、Token 用量、工具调用、估算费用、自动检查和代码差异。项目还提供规则路由和固定档位路由。
+RouterCoder 是一个按子任务选择模型的编码智能体。它接收一条 coding 任务，先提取需求并只读了解相关代码，再按功能与依赖规划有序子任务，由 Jev 为每个子任务判断难度，从三档模型中选出一档，交给 Pi 执行。目标目录可以是空文件夹、已有代码的普通文件夹或 Git 仓库。每次运行都会保存规划、逐步路由、实际模型、Token 用量、工具调用、估算费用、自动检查和代码差异。项目还提供规则路由和固定档位路由。
 
 每个子任务执行期间保持同一模型；下一子任务会重新路由。任务结束后会运行可发现的本地检查，并用只读模型对需求满足程度给出自动估计。该分数不是独立测试结论；失败后升级模型和大规模基准评测尚未实现。
 
@@ -21,7 +21,7 @@ npm ci
 test -f configs/models.yaml || cp configs/models.example.yaml configs/models.yaml
 ```
 
-共享样例配置采用三款价格较低的 Codex 模型：Small 使用 `gpt-5.6-luna`，Medium 使用 `gpt-6-luna`，Strong 使用 `gpt-6-sol`。这是临时的难度档位，尚未证明两款 Luna 的能力顺序；GPT-6 Luna 的 API 单价实际上低于 GPT-5.6 Luna，因此不能把这组三档用于证明路由节省了费用。样例价格取自 [OpenAI API 标准价格](https://developers.openai.com/api/docs/pricing) 的 2026-09-23 快照，单位为美元 / 百万 Token。通过 Pi 的 `openai-codex` 登录 ChatGPT 时，trace 的 `estimatedCostUsd` 是 **API 等价模拟费用**，不是订阅账单。复杂任务的规划和需求评估固定使用 Strong 档，相关费用计入总估算；Jev 费用尚未计入。
+共享样例配置采用三款价格较低的 Codex 模型：Small 使用 `gpt-5.6-luna`，Medium 使用 `gpt-6-luna`，Strong 使用 `gpt-6-sol`。这是临时的难度档位，尚未证明两款 Luna 的能力顺序；GPT-6 Luna 的 API 单价实际上低于 GPT-5.6 Luna，因此不能把这组三档用于证明路由节省了费用。样例价格取自 [OpenAI API 标准价格](https://developers.openai.com/api/docs/pricing) 的 2026-09-23 快照，单位为美元 / 百万 Token。通过 Pi 的 `openai-codex` 登录 ChatGPT 时，trace 的 `estimatedCostUsd` 是 **API 等价模拟费用**，不是订阅账单。需求提取、子任务规划和需求评估固定使用 Strong 档，相关费用计入总估算；Jev 费用尚未计入。
 
 启动任务前会检查三档模型是否都能在 Pi 中找到并具备可用凭据。本机使用 DeepSeek 时，在启动终端设置 `DEEPSEEK_API_KEY`；密钥不写入 `models.yaml`。使用 OpenAI Codex 时，在 Pi 终端运行 `/login` 完成 ChatGPT 登录。若改用其他供应商，请先在启动 RouterCoder 的终端加载该供应商所需的 API Key 环境变量，再编辑 `configs/models.yaml` 中三档的供应商、模型 ID、上下文长度和每百万 Token 的输入/输出价格；缓存读取/写入价格可选，省略时按普通输入价格估算。若使用兼容 OpenAI 接口的自定义服务，先在 Pi 的 `models.json` 中定义供应商和模型，再把相同的 ID 写入 `configs/models.yaml`。不要把凭据写入配置文件。
 
@@ -57,9 +57,40 @@ node dist/cli.js run --workspace /目标目录的绝对路径 --task '修复加�
 node dist/cli.js run --workspace /目标目录的绝对路径 --task '修复加法测试失败' --router fixed --tier medium
 ```
 
-省略 `--workspace` 时使用启动命令所在的当前目录。默认读取 RouterCoder 项目根目录的 `configs/models.yaml`，在任何目录启动都能找到配置；也可用 `--config` 指定其他配置。`--repo` 仍可作为 `--workspace` 的旧名称使用。`--trace-dir` 可指定运行记录目录，默认位置为项目根目录的 `traces/`；运行记录不会提交到 Git。短小的现有项目任务直接执行，其他任务由 Strong 档先规划为最多六个有序子任务。CLI 显示每步档位、最终回复、自动质量分数、估算费用和 trace 路径。子任务执行失败、自动检查失败或综合分数低于 70 时返回非零退出码。没有可运行检查但有代码差异时，需求评估器仍可给出带置信度的 `estimated` 分数；评估不可用时标为 `unverified`。
+省略 `--workspace` 时使用启动命令所在的当前目录。默认读取 RouterCoder 项目根目录的 `configs/models.yaml`，在任何目录启动都能找到配置；也可用 `--config` 指定其他配置。`--repo` 仍可作为 `--workspace` 的旧名称使用。`--trace-dir` 可指定运行记录目录，默认位置为项目根目录的 `traces/`；运行记录不会提交到 Git。所有任务先由 Strong 档提取需求、读取代码依据并规划；简单任务保留为一步，复杂任务最多六步。规划结构检查通过后才开始逐步路由；检查不合格时最多修正一次，仍不合格则回退为完整原任务。CLI 显示每步档位、最终回复、自动质量分数、估算费用和 trace 路径。子任务执行失败、自动检查失败或综合分数低于 70 时返回非零退出码。没有可运行检查但有代码差异时，需求评估器仍可给出带置信度的 `estimated` 分数；评估不可用时标为 `unverified`。
 
 可运行 `node scripts/create-demo-repo.mjs` 创建可重复使用的示例仓库，再把脚本输出的路径传给 `--workspace`。该命令支持 Windows、macOS 和 Linux。示例仓库包含一项失败的 Node.js 测试。RouterCoder 会在任务结束时自动发现并运行适用的本地检查。
+
+## 子任务拆分标准
+
+规划先提取用户明确需求并保留原文引用，再只读扫描相关源码、接口、配置和测试。每个子任务应交付一个明确、可验证的能力；紧密关联的实现与测试可以同一步完成，只有接口明确且可分别验收的工作才拆开。文件数量不决定任务边界，也不为适应小模型强行拆碎任务。
+
+每步规划记录 `requirementIds`（覆盖需求）、`dependsOn`（前置步骤）、`inputs` / `outputs`（成果契约）、`expectedFiles`（预计文件）、`acceptanceCriteria` / `verification`（验收标准与方式）、`rationale`（边界理由）和 `evidenceIds`（实际读取的代码依据）。程序检查需求是否全部分配、交付成果是否重复、依赖是否存在且在前、接口消费是否声明以及代码依据是否真实读取。完整规则、预算和 trace 字段见 [子任务规划说明](docs/task-planning.md)。
+
+源码阅读采用有预算的相关性筛选，不是完整仓库审查；需求引用与结构检查也无法证明模型正确理解了全部要求。规划校验失败会记录原因并回退为未拆分原任务。执行失败后的自动重新规划尚未实现。
+
+## 规划辅助难度判定
+
+规划器确定子任务边界后，补充可选的 `complexityHint`（初步 `easy / medium / hard` 标签）和 `complexityFactors`（修改范围、依赖、集成风险、不确定性）。其中 `confirmedFacts` 必须引用实际读取的代码片段；`assumptions` 明确区分尚未确认的实现假设。规划器和 Jev 共用 `src/core/decision.ts` 的难度标准。
+
+默认把这些分析及引用片段作为 Jev 的参考，同时保留子任务描述、交付成果、验收点和当前工作区摘要。Jev 被要求独立分类，不能只复制标签。规划时的代码片段是历史快照，后续子任务可能已修改相关代码；引用存在也不能证明规划器的事实解释正确。标签缺失或规划失败回退时仍可正常路由。
+
+若规划器初判 `hard`，而 Jev 返回 `easy` 且置信度足够，仍选择 Small，并记录分歧。置信度低于 0.60 或请求失败的 Strong 回退规则照常适用，不平均两个标签、不因分歧自动升级。CLI 与 Pi 都会显示初判和 Jev 分类；trace 的 `subtasks[].plan` 保存规划分析，`subtasks[].decision.jevInput` 保存输入模式和请求状态，`plannerComparison` 保存原始分类间的分歧；请求失败时分歧为 `null`。
+
+使用 `--jev-input` 可以选择后续对照实验的输入：
+
+| 值 | 发给 Jev 的信息 |
+| --- | --- |
+| `baseline` | 子任务及验收信息、工作区摘要；不发送规划标签、分析和代码片段 |
+| `hint` | baseline 加初步标签；不发送复杂度分析和代码片段 |
+| `analysis`（默认） | baseline 加可用的标签、复杂度分析和实际引用片段 |
+
+```bash
+node dist/cli.js interactive --workspace /目标目录的绝对路径 --router jev --jev-input analysis
+# 单次模式同样支持 --jev-input baseline、hint 或 analysis。
+```
+
+该参数只适用于 Jev 路由。三种模式均使用同一规划流程和难度标准，规划分析仍写入 trace，即使 baseline 不把它发送给 Jev。后续应在相同任务和起始代码上比较独立验收质量、完整费用与耗时；当前费用估算不包含 Jev，新增片段也会增加 Jev 的输入用量。尚未开展真实模型对照实验，不能把标签一致率当作路由准确率。
 
 ## Pi 终端交互界面
 
@@ -71,9 +102,9 @@ node dist/cli.js interactive --workspace /目标目录的绝对路径 --router j
 
 交互模式同样支持 `--config` 和 `--trace-dir`。`--router rule` 不依赖 Jev；`--router fixed --tier small|medium|strong` 可直接指定档位。打开界面前，RouterCoder 会检查三档模型及其凭据。
 
-每次提交新任务时，RouterCoder 先规划有序子任务，再为当前子任务路由、切换模型，并在 Pi 状态栏显示步骤与档位。每步执行结束后自动进入下一步并重新路由；执行中的追问沿用当前子任务模型。Pi 原有的聊天、文件工具和终端操作仍可使用。
+每次提交新任务时，Pi 状态栏会依次显示需求提取、只读代码了解、任务划分和规划检查进度。RouterCoder 在聊天记录中显示需求点、拆分理由、每步目标、依赖和验收方式，再为当前子任务路由、切换模型，并在状态栏显示步骤与档位。每步执行结束后自动进入下一步并重新路由；执行中的追问沿用当前子任务模型。Pi 原有的聊天、文件工具和终端操作仍可使用。
 
-顶层任务结束时会生成一份 JSON 运行记录，包含规划、每步决策与差异、实际模型调用、Token 用量、估算费用、工具调用、自动检查、需求估计及总差异。Pi 会通过通知显示记录路径。若某步 Jev 请求失败或置信度低于 0.60，该步选择 `strong`，并记录原因。
+顶层任务结束时会生成一份 JSON 运行记录，包含需求引用、代码依据、规划校验、每步决策与差异、实际模型调用、Token 用量、估算费用、工具调用、自动检查、需求估计及总差异。Pi 会通过通知显示记录路径。若某步 Jev 请求失败或置信度低于 0.60，该步选择 `strong`，并记录原因。
 
 交互模式会比较每轮任务前后的工作区快照，因此前几轮留下的修改不会混入下一轮的差异。如果其他进程在任务执行期间修改同一目录，这些修改可能出现在本轮记录中；交互使用时建议为目标目录留出独立工作区。快照使用系统临时目录中的 Git 对象库，不修改目标目录的 Git 索引，也不会给普通目录添加 `.git`。快照遵循工作区的 `.gitignore`，并跳过 `.git`、`node_modules`、`.venv`、`venv`、`__pycache__` 和 `.cache` 目录；这些目录中的修改不会出现在记录里。
 
@@ -115,8 +146,11 @@ docs/reference/      项目原始设计文档
 ```mermaid
 flowchart LR
   A[CLI 或 Pi 交互任务与本地目录] --> B[目录摘要]
-  B --> C[规划有序子任务]
-  C --> D[逐步路由：Jev、规则或固定档位]
+  B --> R[提取需求点]
+  R --> S[只读源码、接口与测试片段]
+  S --> C[按功能与依赖划分任务]
+  C --> V[检查覆盖、重复与执行顺序]
+  V --> D[逐步路由：Jev、规则或固定档位]
   D --> E[Small、Medium 或 Strong 模型]
   E --> F[Pi 执行当前子任务]
   F --> I{还有子任务?}
@@ -125,7 +159,7 @@ flowchart LR
   G --> H[父子任务运行记录]
 ```
 
-Jev 为每个子任务回答一个与编码任务有关的 `easy / medium / hard` 难度问题，分别映射到 `small / medium / strong`。请求包含工作区是否为空、主要语言、文件数和部分路径，但不发送全部代码。当置信度低于 0.60、响应格式无效或请求失败时，该步选择 `strong` 并记录原因。规则路由使用少量固定关键词；固定档位路由使每个子任务都使用指定档位。
+Jev 为每个子任务回答一个与编码任务有关的 `easy / medium / hard` 难度问题，分别映射到 `small / medium / strong`。请求包含子任务与验收点、工作区是否为空、主要语言、文件数和部分路径；默认还包含可选规划分析及其引用的局部代码片段，不发送全部代码。当置信度低于 0.60、响应格式无效或请求失败时，该步选择 `strong` 并记录原因。规则路由使用少量固定关键词；固定档位路由使每个子任务都使用指定档位。
 
 自动验收目前会在项目具备相应配置时运行 `npm run test`、`npm run build`、`python -m pytest`、`go test ./...` 或 `cargo test --quiet`，检查分数为通过项占可运行项的比例。只读 Strong 模型还会根据任务、验收点、最终差异和检查输出给出 0–100 的需求满足度估计及置信度。最终分数取两者较低值；没有可运行检查时只使用模型估计。检查可能由执行模型自行创建，模型也只看有限差异，所以 `estimated` 不能代替独立的需求验收；没有差异且没有可运行检查时分数为 `null`、状态为 `unverified`。项目若需额外依赖，应先在目标环境中安装，避免环境缺失影响判定。
 
